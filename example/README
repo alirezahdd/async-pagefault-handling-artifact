@@ -1,0 +1,410 @@
+# Asynchronous Page Fault Handling Library - Example
+
+## Overview
+
+This example demonstrates how to use the asynchronous page fault handling library (`libpfq_single.h`) to optimize memory-intensive applications that experience frequent page faults. The library allows applications to continue execution while page faults are being serviced, significantly improving performance under memory pressure.
+
+## Example Files
+
+- **`src/rnd_vanilla.cc`**: Baseline version without asynchronous fault handling
+- **`src/rnd.cc`**: Optimized version using the asynchronous fault handling library
+- **`src/u_benchmark.cc`**: Utility functions for the benchmark
+
+## What the Library Does
+
+The library provides a try-catch mechanism for handling page faults asynchronously. When a page fault occurs at a registered program counter (PC):
+1. The fault is caught without blocking the main execution flow
+2. The faulting state is enqueued for later processing
+3. The program continues with the next iteration
+4. When the queue fills up (reaches `pagefault_queue_size`), queued operations are automatically processed
+5. At the end of execution, any remaining queued operations are flushed
+
+This approach overlaps computation with page fault servicing through a triple-buffering queue mechanism, reducing overall execution time.
+
+---
+
+## Using the Library: Step-by-Step Guide
+
+### Step 1: Identify the Faulting Instructions
+
+Examine your code and identify the memory access instructions that are likely to cause page faults. These are typically:
+- Random memory accesses
+- Accesses to large data structures that don't fit in memory
+- Sequential accesses through swapped-out memory regions
+
+In our example (`rnd_vanilla.cc`), the faulting instruction is:
+```cpp
+dummy = *address; // trouble maker - triggers page fault exception without handling
+```
+
+Mark these instructions with a comment like `// trouble maker` for easy identification later.
+
+### Step 2: Include the Library Header
+
+Add the library header at the top of your source file:
+```cpp
+#include "libpfq_single.h"
+```
+
+### Step 3: Define the State Structure and Resume Function
+
+**Important**: The library's app-specific section is initially empty. You must customize it for your application by defining:
+
+1. **The `state` structure**: This holds all information needed to resume a deferred operation
+2. **The `resume_iteration()` function**: This completes the deferred operation when called later
+
+Open `libpfq_single.h` and locate the "APP-SPECIFIC SECTION" (around line 54). Customize it for your needs:
+
+```cpp
+struct state {
+  // Required field
+  volatile char* faulty_address;  // The address that caused the page fault
+  
+  // Add your custom fields here
+  long long* sum_ptr;             // Example: pointer to accumulator
+  // Add any other data needed to complete the operation
+};
+
+inline void resume_iteration(state &s) {
+  // Your custom resume logic here
+  volatile char dummy;
+  volatile char* address = s.faulty_address;
+  dummy = *address;               // Re-access the faulting address
+  *(s.sum_ptr) += dummy;          // Complete the operation
+}
+```
+
+**Key points**:
+- The `state` structure must contain `faulty_address` (the address that caused the fault)
+- Add any additional fields your application needs (e.g., pointers to data structures, indices, flags)
+- The `resume_iteration()` function takes a `state` reference and completes the deferred operation
+- This function is called automatically when the queue fills up, and by `FLUSH_QUEUE()` to process any remaining items
+
+### Step 4: Prepare the Try-Catch Mechanism
+
+Before your main loop, initialize the asynchronous fault handling mechanism:
+
+```cpp
+// Specify how many unique faulting PCs you have
+const int num_special_pcs = 1;
+
+// Initialize the mechanism
+prepare_try_catch_mechanism(num_special_pcs);
+
+// Register PC values (these will be filled in Step 6)
+ips[0] = 0x0;        // PC of faulting instruction (placeholder)
+ret_ips[0] = 0x0;    // Offset to next instruction (placeholder)
+
+register_ips_and_retips(ips, ret_ips, num_special_pcs);
+```
+
+### Step 5: Wrap Faulting Instructions with TRY/CATCH
+
+Modify your loop to use the library's macros:
+
+```cpp
+for (uint64_t i = 0; i < NUM_PAGES; i++) {
+    INIT(i);  // Initialize iteration tracking
+    
+    uint64_t offset = page_sequence[i];
+    volatile char* address = &memory[offset];
+    
+    TRY {
+        dummy = *address; // trouble maker
+    } CATCH {
+        // Define the state needed to resume this iteration
+        state s = {address, &sum};
+        
+        // Enqueue for later processing
+        ENQUEUE(s, resume_iteration);
+        
+        printf("Page fault at access to offset: %lu\n", offset);
+        continue;  // Skip to next iteration
+    }
+    
+    // Normal execution continues here
+    sum += dummy;
+}
+```
+
+**Key points:**
+- `INIT(i)`: Call at the beginning of each iteration with the iteration variable
+- `TRY { ... }`: Wrap the faulting instruction
+- `CATCH { ... }`: Define what happens when a fault occurs
+- `state`: Structure holding data needed to resume the operation
+- `ENQUEUE(s, callback)`: Queue the faulting operation with a callback function
+- `continue`: Skip the rest of the iteration after catching a fault
+
+### Step 6: Flush the Queue
+
+After your loop completes, process any remaining queued operations:
+
+```cpp
+FLUSH_QUEUE(resume_iteration);
+```
+
+**Important**: Most deferred operations are automatically processed when the queue fills up (reaches `pagefault_queue_size`, default is 8). `FLUSH_QUEUE()` only processes the remaining items that didn't fill the queue at the end of execution.
+
+### Step 7: Clean Up
+
+Before exiting, free the allocated resources:
+
+```cpp
+unregister_and_free_arrays();
+```
+
+---
+
+## Compilation Process
+
+The compilation happens in **two stages** because we need to extract program counter (PC) values from the compiled binary.
+
+### Stage 1: Initial Compilation
+
+1. **Compile with debug symbols and no PIE**:
+   ```bash
+   make
+   ```
+
+   The Makefile compiles with these flags:
+   - `-g`: Include debug symbols for assembly analysis
+   - `-no-pie`: Disable position-independent executable (ensures consistent PC addresses)
+
+2. **Check the generated files**:
+   - Binary: `u_benchmark`
+   - Assembly: `src_assembly/u_benchmark.s`
+
+### Stage 2: Extract PC Values
+
+1. **Open the assembly file**:
+   ```bash
+   less src_assembly/u_benchmark.s
+   ```
+
+2. **Find the faulting instruction**:
+   - Search for your `trouble maker` comment in the assembly
+   - Locate the corresponding `mov` instruction
+   - Note its PC address (hex value at the start of the line)
+   
+   Example:
+   ```assembly
+   4016db:	0f b6 00             	movzbl (%rax),%eax     # Faulting instr
+   4016de:	88 45 9b             	mov    %al,-0x65(%rbp) # Next instr
+   ```
+   
+   In this example:
+   - Faulting PC: `0x4016db`
+   - Next instruction PC: `0x4016de`
+
+3. **Calculate the offset**:
+   ```
+   offset = next_instruction_PC - faulting_PC
+   offset = 0x4016db - 0x4016d8 = 0x3
+   ```
+
+4. **Update the source code**:
+   
+   In `src/rnd.cc`, update the PC registration:
+   ```cpp
+   ips[0] = 0x4016db;      // Faulting instruction PC
+   ret_ips[0] = 0x3;       // Offset to CATCH block entry
+   ```
+
+### Stage 3: Recompile with PC Values
+
+```bash
+make
+```
+
+Your binary is now ready with correctly configured asynchronous fault handling!
+
+---
+
+## Running the Example
+
+### Basic Execution
+
+```bash
+./u_benchmark
+```
+
+### Running Under Memory Pressure
+
+To demonstrate the benefits of asynchronous fault handling, run the benchmark with memory constraints:
+
+1. **Set up memory limits** (requires sudo):
+   ```bash
+   sudo ./limit_mem.sh 2M
+   ```
+
+2. **Run with memory constraints**:
+   ```bash
+   sudo cgexec -g memory:u_bench_group ./u_benchmark
+   ```
+
+   Or use the provided script:
+   ```bash
+   sudo ./run.sh
+   ```
+
+### Expected Output
+
+You should see output like:
+```
+Memory allocated and initialized.
+Page fault at access to offset: 8192
+Page fault at access to offset: 16384
+...
+Sum of accessed bytes: XXXXX
+Random access complete
+```
+
+---
+
+## API Reference
+
+### Initialization Functions
+
+- **`prepare_try_catch_mechanism(int num_pcs)`**: Initialize the library with the number of unique faulting PCs
+- **`register_ips_and_retips(uint64_t* ips, uint64_t* ret_ips, int count)`**: Register PC addresses and their offsets
+
+### Macros
+
+- **`INIT(iteration_var)`**: Initialize iteration tracking (call at loop start)
+- **`TRY { ... }`**: Begin protected code block
+- **`CATCH { ... }`**: Define fault handler
+- **`ENQUEUE(state, callback)`**: Queue a faulting operation for later processing
+- **`FLUSH_QUEUE(callback)`**: Process all queued operations
+
+### Cleanup Functions
+
+- **`unregister_and_free_arrays()`**: Free library resources (call before exit)
+
+---
+
+## Key Concepts
+
+### Queueing Mechanism
+
+The library uses a triple-buffering queue system:
+1. **Current Queue (`curr_queue`)**: Stores newly caught page faults
+2. **Shipped Queue (`shipped_queue`)**: Holds faults whose pages are being paged in
+3. **Ready Queue (`ready_queue`)**: Contains faults ready to be resumed
+
+**Automatic Processing**: When `curr_queue` reaches `pagefault_queue_size` (default: 8), the library:
+- Pages in the faulting addresses from `curr_queue` using `process_madvise()`
+- Rotates the queues: ready → shipped → current
+- Resumes all operations in `ready_queue` by calling `resume_iteration()`
+
+This overlaps page-in operations with computation, maximizing performance.
+
+### State Structure
+
+The `state` structure holds information needed to resume a deferred operation:
+```cpp
+state s = {address, &sum};
+```
+
+Define this based on what your callback function needs to complete the operation.
+
+### Callback Function
+
+Define a callback to process deferred operations:
+```cpp
+void resume_iteration(state* s) {
+    volatile char dummy = *(s->address);
+    *(s->sum_ptr) += dummy;
+}
+```
+
+This function is called automatically during queue processing and when `FLUSH_QUEUE()` is invoked.
+
+### Multiple Faulting PCs
+
+If you have multiple instructions that fault frequently:
+```cpp
+const int num_special_pcs = 3;
+prepare_try_catch_mechanism(num_special_pcs);
+
+ips[0] = 0x4016d8;  // First faulting instruction
+ips[1] = 0x401750;  // Second faulting instruction
+ips[2] = 0x4017a0;  // Third faulting instruction
+
+ret_ips[0] = 0x3;
+ret_ips[1] = 0x5;
+ret_ips[2] = 0x3;
+
+register_ips_and_retips(ips, ret_ips, num_special_pcs);
+```
+
+---
+
+## Troubleshooting
+
+### PC Values Don't Match
+
+If faults aren't being caught:
+- Ensure you compiled with `-no-pie` flag
+- Recompile from scratch (`make clean && make`)
+- Verify PC values in the assembly file match those in your source code
+- Check that you're using the correct binary (not an old cached version)
+
+### Compilation Errors
+
+- Ensure kernel headers are installed (see `Artifact_Workflow.md`)
+- Verify `TASKSTATS_INCLUDE_PATH` is set correctly in the Makefile
+- Check that `libpfq_single.h` is in your include path
+
+### Runtime Errors
+
+- Ensure you have sudo privileges for memory limiting operations
+- Verify cgroup support is enabled in your kernel
+- Check that swap space is configured
+
+---
+
+## Performance Tips
+
+1. **Identify Hot PCs**: Use profiling tools to find instructions causing the most page faults
+2. **Register Multiple PCs**: Handle multiple high-frequency faulting instructions
+3. **Tune Queue Size**: Adjust the queue size based on your workload (see library documentation)
+4. **Memory Pressure**: The library is most beneficial under high memory pressure scenarios
+
+---
+
+## Comparison: Vanilla vs. Optimized
+
+### Vanilla Version (`rnd_vanilla.cc`)
+- Simple, straightforward code
+- Blocks on every page fault
+- Execution time dominated by fault servicing
+
+### Optimized Version (`rnd.cc`)
+- Asynchronous fault handling
+- Continues execution while faults are serviced
+- Significant speedup (1.5-3× typical) under memory pressure
+
+---
+
+## Further Reading
+
+- See `gups-modified/Artifact_Workflow.md` for complete compilation details
+- See `Artifact_Evaluation.tex` for experimental methodology and results
+- Consult the paper for architectural details and performance analysis
+
+---
+
+## Summary Workflow
+
+1. Identify faulting instructions in your code
+2. Include `libpfq_single.h`
+3. Define `state` structure and `resume_iteration()` function in the library
+4. Add `prepare_try_catch_mechanism()` and registration
+5. Wrap faulting code with `TRY`/`CATCH` and `ENQUEUE()`
+6. Add `FLUSH_QUEUE()` after your loop (processes remaining items)
+7. Add cleanup with `unregister_and_free_arrays()`
+8. Compile with `-g -no-pie` flags
+9. Extract PC values from assembly
+10. Update source code with PC values
+11. Recompile and run
+
