@@ -81,14 +81,12 @@ def get_sysproc_stats(basename, batching):
 def extract_bars():
   vanilla_tuple, tos_tuple, batching_tuple = (), (), ()
   vanilla_basename, tos_basename, batching_basename = get_filenames()
-  print (f'Vanilla: {vanilla_basename}, ToS: {tos_basename}, Batching: {batching_basename}')
   baseline_elapsed = get_time_stats(vanilla_basename,False)[3] * NUM_CORES
   for run in [vanilla_basename, tos_basename, batching_basename]:
     batching = (run == batching_basename)
     basename = run
     user, system, idle, elapsed = get_time_stats(basename,batching)
     if run != tos_basename:
-      print(f'Run: {run}')
       blkio_delay, irq_delay = get_taskstat(basename, batching)
       syswide_irq = get_sysproc_stats(basename, batching)
       pf_irq = syswide_irq - irq_delay if syswide_irq > irq_delay else 0.0

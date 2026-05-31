@@ -1,7 +1,7 @@
 .PHONY: all clean
 
 # Final output target
-all: gups_xsb_exetime_breakdown_light_auto.pdf
+all: Fig.9.pdf
 
 # Source directories
 GUPS_SRC = ../gups-modified/experiments/performance_evaluation/results/gups_single_threaded \
@@ -10,8 +10,8 @@ XSBENCH_SRC = ../XSBench-master/openmp-threading/experiments/performance-evaluat
               ../XSBench-master/openmp-threading-batching/experiments/performance-evaluation/results/XSBench
 
 # Generate the final plot
-gups_xsb_exetime_breakdown_light_auto.pdf: GUPS/.copied XSBench/.copied generate_exetime_breakdown.py
-	python3 generate_exetime_breakdown.py
+Fig.9.pdf: GUPS/.copied XSBench/.copied plot-fig9.py
+	python3 plot-fig9.py
 
 # Copy GUPS data
 GUPS/.copied: $(GUPS_SRC) gather_stats_gups.py
@@ -37,4 +37,4 @@ XSBench/.copied: $(XSBENCH_SRC) gather_stats_xs.py
 # Clean up generated files and directories
 clean:
 	rm -rf GUPS XSBench
-	rm -f gups_xsb_exetime_breakdown_light_auto.pdf
+	rm -f *.pdf

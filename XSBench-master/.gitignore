@@ -1,0 +1,13 @@
+.vscode/
+
+# */XSBench
+
+*.stats
+*.txt
+*.pdf
+*.parsed
+*.output
+*.dat
+*.log
+# *.asm
+*.o

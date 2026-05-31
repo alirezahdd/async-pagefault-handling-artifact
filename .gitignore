@@ -1,0 +1,10 @@
+
+gapbs-master/experiments/performance_evaluation/results/
+
+gapbs-master/experiments/collected_results/results_performance/
+gapbs-master/experiments/collected_results/results_q_size/
+gapbs-master/experiments/collected_results/figures/
+
+gups-xsbench-results/GUPS/
+gups-xsbench-results/XSBench/
+gups-xsbench-results/*.pdf

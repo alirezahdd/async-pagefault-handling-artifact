@@ -1,0 +1,14 @@
+# gups_openmp
+# gups_single_threaded
+# gups_single_threaded_batching
+
+.vscode/
+
+*.stats
+*.txt
+*.pdf
+*.parsed
+*.output
+*.dat
+*.log
+# *.asm

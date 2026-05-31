@@ -1,0 +1,35 @@
+# bc
+# bc_batching
+# bc_batching_nopt
+
+# cc
+# cc_batching
+# cc_batching_nopt
+
+# tc
+# tc_batching
+
+# sssp
+# sssp_batching
+# sssp_batching_nopt
+
+# pr
+# pr_batching
+
+# bfs
+# bfs_batching
+# bfs_batching_nopt
+
+omp_runtime_visualizer/lib
+omp_runtime_visualizer/env_setup.sh
+.vscode/
+
+*.stats
+*.txt
+*.pdf
+*.parsed
+*.output
+*.dat
+*.log
+*.trace
+# *.asm

@@ -160,57 +160,25 @@ sudo ./run_vanillas.sh    # Baseline
 sudo ./run_batchings.sh   # Optimized with different queue sizes
 ```
 
-### 1.5 Collect Results
+## Step 2: Collecting and Plotting the results
 
-Once all experiments are complete, gather and organize the results:
-```bash
-cd ../collected_results/
-./populate_results.sh
-```
-
-This script consolidates results from all experiments into directories accessible to the analysis and plotting tools.
-
-## Step 2: Plotting the results
-
-This step generates the figures presented in the paper from the collected experimental data.
-
-### 2.1 Performance Results (Figures 1, 2, 4, 5, and 7)
+This step collects the experiment results and generates the figures presented in the paper.
 
 Navigate to the performance plotters directory:
 ```bash
-cd experiments/collected_results/results_performance/plotters/
+cd experiments/collected_results/
+make
 ```
 
-Run all plotting scripts:
-```bash
-./_plot.sh
-```
+It consolidates results from all experiments into directories accessible to the analysis and plotting tools and then plots them.
 
 **Output**: The generated figures will be placed in:
 ```
-experiments/collected_results/results_performance/figures/
-```
-
-### 2.2 Queue Size Sensitivity Results (Figure 8)
-
-Navigate to the queue size results directory:
-```bash
-cd ../../results_q_size/plotters/
-```
-
-Generate Figure 8:
-```bash
-./_plot.sh
-```
-
-**Output**: The generated figure will be placed in:
-```
-experiments/collected_results/results_q_size/figures/
+experiments/collected_results/figures/
 ```
 
 ### Summary:
-- Performance-related figures (1, 2, 4, 5, 7) are in `results_performance/figures/`
-- Queue size study figure (8) is in `results_q_size/figures/`
+- All figures (1, 2, 4, 5, 7, and 8) are in `collected_results/figures/`
 - **Figure 6** must be manually constructed from the PC contribution statistics in `experiments/faulting_pcs_evaluation/pc_contributions/` due to platform-specific PC addresses
 
 ---
